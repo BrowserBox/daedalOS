@@ -403,7 +403,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         browserBoxRef.current = webview;
       }
 
-      webview.setAttribute("parent-origin", window.location.origin);
+      webview.setAttribute("embedder-origin", window.location.origin);
       linkElement(id, "peekElement", webview);
 
       return webview;
