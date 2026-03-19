@@ -15,7 +15,7 @@
     "build": "yarn build:prebuild && next build",
     "build:bundle-analyzer": "yarn build",
     "build:cf-pages": "yarn build && node scripts/stripCloudflarePagesAssets.js",
-    "deploy:cf-pages": "yarn install && yarn build:cf-pages && wrangler pages deploy out/ --project-name daedalos",
+    "deploy:cf-pages": "yarn install && yarn build:cf-pages && wrangler pages deploy out/ --project-name daedalos --branch pages-browserbox-daedalos",
     "build:demos": "yarn build && node scripts/buildForSubpath.mjs /demos/daedalos ../BrowserBox-source/perfect-saas/desktop/demos/daedalos",
     "build:fs:private": "node scripts/fs2json.js --out public/.index/fs.private.9p.json ./public/private",
     "build:fs:public": "node scripts/fs2json.js --exclude .index,private --out public/.index/fs.9p.json ./public",
