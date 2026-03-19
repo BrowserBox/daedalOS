@@ -5,10 +5,21 @@ type StyledBrowserProps = {
 };
 
 const StyledBrowser = styled.div<StyledBrowserProps>`
-  iframe {
+  iframe,
+  .browserbox-host {
     background-color: ${({ $hasSrcDoc }) => ($hasSrcDoc ? "#fff" : "initial")};
     border: 0;
     height: calc(100% - 42px - 37px);
+    width: 100%;
+  }
+
+  .browserbox-host {
+    background-color: #fff;
+  }
+
+  .browserbox-host > browserbox-webview {
+    display: block;
+    height: 100%;
     width: 100%;
   }
 
