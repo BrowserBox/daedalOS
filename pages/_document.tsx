@@ -42,7 +42,9 @@ class Document extends NextDocument {
   public override render(): React.JSX.Element {
     return (
       <Html lang={DEFAULT_LOCALE}>
-        <Head />
+        <Head>
+          <script dangerouslySetInnerHTML={{__html:"if(navigator.audioSession)navigator.audioSession.type='transient';"}} />
+        </Head>
         <body>
           <Main />
           <NextScript />
