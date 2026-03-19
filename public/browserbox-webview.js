@@ -26,7 +26,7 @@
  * | `login-link` | yes | — | Full BrowserBox login URL with auth token |
  * | `width` | no | `"100%"` | CSS width (px if bare number) |
  * | `height` | no | `"100%"` | CSS height (px if bare number) |
- * | `parent-origin` | no | `"*"` | Restrict postMessage origin |
+ * | `embedder-origin` | no | `"*"` | Origin of the embedding page (passed to BrowserBox iframe) |
  * | `request-timeout-ms` | no | `30000` | API call timeout (ms) |
  *
  * ## Events
@@ -968,7 +968,8 @@ class BrowserBoxWebview extends HTMLElement {
       'login-link',
       'width',
       'height',
-      'parent-origin',
+      'embedder-origin',
+      'parent-origin', // deprecated alias for embedder-origin
       'request-timeout-ms',
       'ui-visible',
       'allow-user-toggle-ui',
@@ -1405,6 +1406,9 @@ class BrowserBoxWebview extends HTMLElement {
   }
 
   _handleLoad() {
+    if (this._reconnectStopped) {
+      return;
+    }
     const needsReset = this._isReady;
     this._isReady = false;
     this._apiMethods = [];
@@ -1924,27 +1928,39 @@ class BrowserBoxWebview extends HTMLElement {
         uiVisible: config.uiVisible,
         allowUserToggleUI: config.allowUserToggleUI,
         chromeMode: config.chromeMode,
+        embedderOrigin: this.embedderOrigin,
         reason,
       },
     });
     return true;
   }
 
-  _allowedOrigin() {
-    const configured = this.parentOrigin;
-    if (configured && configured !== '*') {
-      return configured;
+  /**
+   * Derive the BrowserBox iframe origin from the login-link URL.
+   * This is the origin of the iframe content, used for:
+   *   - outbound postMessage targetOrigin (webview → iframe)
+   *   - inbound origin validation (iframe → webview)
+   * Falls back to '*' during initial load before login-link is set.
+   */
+  _browserboxOrigin() {
+    const loginLink = this.getAttribute('login-link');
+    if (loginLink) {
+      try {
+        return new URL(loginLink).origin;
+      } catch {
+        // login-link not parseable yet
+      }
     }
-    // Use '*' for outbound postMessage. The iframe content window origin may be
-    // 'null' during initial load (before navigation completes), causing
-    // postMessage to throw if we target a specific origin. Inbound validation
-    // via _validateIncomingOrigin still checks the source origin.
     return '*';
   }
 
+  _outboundTargetOrigin() {
+    return this._browserboxOrigin();
+  }
+
   _validateIncomingOrigin(origin) {
-    const allowed = this._allowedOrigin();
-    return allowed === '*' || origin === allowed;
+    const expected = this._browserboxOrigin();
+    return expected === '*' || origin === expected;
   }
 
   _normalizeTabId(detail) {
@@ -2523,7 +2539,7 @@ class BrowserBoxWebview extends HTMLElement {
 
     const requestId = `bbx-${Date.now()}-${++this._requestSeq}`;
     const message = { type, requestId, data, ...(options.messageExtras || {}) };
-    const targetOrigin = this._allowedOrigin();
+    const targetOrigin = this._outboundTargetOrigin();
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -2564,7 +2580,7 @@ class BrowserBoxWebview extends HTMLElement {
     if (!this.iframe.contentWindow) {
       return;
     }
-    this.iframe.contentWindow.postMessage(message, this._allowedOrigin());
+    this.iframe.contentWindow.postMessage(message, this._outboundTargetOrigin());
   }
 
   _forwardToParent(message) {
@@ -3149,13 +3165,25 @@ class BrowserBoxWebview extends HTMLElement {
     else this.removeAttribute('height');
   }
 
-  get parentOrigin() {
-    return this.getAttribute('parent-origin') || '*';
+  get embedderOrigin() {
+    return this.getAttribute('embedder-origin')
+      || this.getAttribute('parent-origin')
+      || '*';
   }
 
+  set embedderOrigin(value) {
+    if (value) this.setAttribute('embedder-origin', value);
+    else this.removeAttribute('embedder-origin');
+  }
+
+  /** @deprecated Use embedderOrigin instead. */
+  get parentOrigin() {
+    return this.embedderOrigin;
+  }
+
+  /** @deprecated Use embedderOrigin instead. */
   set parentOrigin(value) {
-    if (value) this.setAttribute('parent-origin', value);
-    else this.removeAttribute('parent-origin');
+    this.embedderOrigin = value;
   }
 
   get requestTimeoutMs() {
