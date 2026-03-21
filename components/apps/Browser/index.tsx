@@ -187,6 +187,31 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
     setRemoteNavigationState(REMOTE_NAVIGATION_STATE);
   }, []);
 
+  const waitForRemoteHostLayout = useCallback(async (): Promise<void> => {
+    const host = browserBoxHostRef.current;
+
+    if (!host) return;
+
+    const hasRemoteHostLayout = (): boolean => {
+      const { height, width } = host.getBoundingClientRect();
+
+      return (
+        getComputedStyle(host).display !== "none" && width > 0 && height > 0
+      );
+    };
+    const waitForNextFrame = (): Promise<void> =>
+      new Promise<void>((_resolve) => {
+        window.requestAnimationFrame(() => _resolve());
+      });
+    const waitForLayoutAttempt = async (attempt: number): Promise<void> => {
+      if (hasRemoteHostLayout() || attempt >= 10) return;
+      await waitForNextFrame();
+      await waitForLayoutAttempt(attempt + 1);
+    };
+
+    await waitForLayoutAttempt(0);
+  }, []);
+
   const showBrowserBoxStatus = useCallback(
     (message: string): void => {
       setSurfaceMode("local");
@@ -450,20 +475,26 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         throw new Error("BrowserBox session did not return a loginUrl.");
       }
 
+      setSurfaceMode("remote");
+      await waitForRemoteHostLayout();
+
       const webview = await ensureBrowserBoxElement();
 
       if (webview.getAttribute("login-link") !== session.loginUrl) {
         webview.setAttribute("login-link", session.loginUrl);
       }
 
-      setSurfaceMode("remote");
-
       if (!(await isBrowserBoxUsable(webview))) {
         await webview.whenReady();
       }
 
       return webview;
-    }, [ensureBrowserBoxElement, ensureBrowserBoxSession, isBrowserBoxUsable]);
+    }, [
+      ensureBrowserBoxElement,
+      ensureBrowserBoxSession,
+      isBrowserBoxUsable,
+      waitForRemoteHostLayout,
+    ]);
 
   const changeIframeWindowLocation = (
     newUrl: string,
