@@ -14,11 +14,7 @@ import {
   type BrowserBoxSession,
   type BrowserBoxWebviewElement,
 } from "components/apps/Browser/browserboxSession";
-import {
-  Arrow,
-  Refresh,
-  Stop,
-} from "components/apps/Browser/NavigationIcons";
+import { Arrow, Refresh, Stop } from "components/apps/Browser/NavigationIcons";
 import StyledBrowser from "components/apps/Browser/StyledBrowser";
 import {
   DINO_GAME,
@@ -134,16 +130,17 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const browserBoxHostRef = useRef<HTMLDivElement | null>(null);
   const browserBoxRef = useRef<BrowserBoxWebviewElement | null>(null);
-  const browserBoxListenersCleanupRef =
-    useRef<(() => void) | undefined>(undefined);
+  const browserBoxListenersCleanupRef = useRef<(() => void) | undefined>(
+    undefined
+  );
   const browserBoxSessionRef = useRef<BrowserBoxSession | undefined>(undefined);
-  const browserBoxSessionPromiseRef =
-    useRef<Promise<BrowserBoxSession | undefined> | undefined>(undefined);
+  const browserBoxSessionPromiseRef = useRef<
+    Promise<BrowserBoxSession | undefined> | undefined
+  >(undefined);
   const browserBoxDisconnectNotifiedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [srcDoc, setSrcDoc] = useState("");
-  const [surfaceMode, setSurfaceMode] =
-    useState<BrowserSurfaceMode>("local");
+  const [surfaceMode, setSurfaceMode] = useState<BrowserSurfaceMode>("local");
   const surfaceModeRef = useRef<BrowserSurfaceMode>("local");
   const [remoteNavigationState, setRemoteNavigationState] =
     useState<RemoteNavigationState>(REMOTE_NAVIGATION_STATE);
@@ -194,9 +191,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
     (message: string): void => {
       setSurfaceMode("local");
       setLoading(false);
-      setSrcDoc(
-        createBrowserBoxStatusPage("BrowserBox unavailable", message)
-      );
+      setSrcDoc(createBrowserBoxStatusPage("BrowserBox unavailable", message));
       prependFileToTitle("BrowserBox unavailable");
       setIcon(id, processDirectory.Browser.icon);
       resetRemoteNavigationState();
@@ -347,10 +342,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
       return () => {
         webview.removeEventListener("ready", handleReady);
         webview.removeEventListener("api-ready", handleApiReady);
-        webview.removeEventListener(
-          "did-start-loading",
-          handleDidStartLoading
-        );
+        webview.removeEventListener("did-start-loading", handleDidStartLoading);
         webview.removeEventListener("did-stop-loading", handleDidStopLoading);
         webview.removeEventListener("did-navigate", handleDidNavigate);
         webview.removeEventListener("active-tab-changed", handleTabMetadata);
@@ -372,8 +364,8 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
     ]
   );
 
-  const ensureBrowserBoxElement = useCallback(
-    async (): Promise<BrowserBoxWebviewElement> => {
+  const ensureBrowserBoxElement =
+    useCallback(async (): Promise<BrowserBoxWebviewElement> => {
       await loadBrowserBoxWebviewAsset();
 
       const host = browserBoxHostRef.current;
@@ -393,7 +385,10 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         webview.style.width = "100%";
         webview.setAttribute("allow-user-toggle-ui", "false");
         webview.setAttribute("height", "100%");
-        webview.setAttribute("request-timeout-ms", BROWSERBOX_REQUEST_TIMEOUT_MS);
+        webview.setAttribute(
+          "request-timeout-ms",
+          BROWSERBOX_REQUEST_TIMEOUT_MS
+        );
         webview.setAttribute("title", `${id} BrowserBox`);
         webview.setAttribute("ui-visible", "false");
         webview.setAttribute("width", "100%");
@@ -407,9 +402,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
       linkElement(id, "peekElement", webview);
 
       return webview;
-    },
-    [id, linkElement, wireBrowserBoxEvents]
-  );
+    }, [id, linkElement, wireBrowserBoxEvents]);
 
   const ensureBrowserBoxSession = useCallback(async (): Promise<
     BrowserBoxSession | undefined
@@ -449,29 +442,28 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
     return browserBoxSessionPromiseRef.current;
   }, [browserBoxClient]);
 
-  const ensureRemoteBrowserReady = useCallback(async (): Promise<
-    BrowserBoxWebviewElement
-  > => {
-    const session = await ensureBrowserBoxSession();
+  const ensureRemoteBrowserReady =
+    useCallback(async (): Promise<BrowserBoxWebviewElement> => {
+      const session = await ensureBrowserBoxSession();
 
-    if (!session?.loginUrl) {
-      throw new Error("BrowserBox session did not return a loginUrl.");
-    }
+      if (!session?.loginUrl) {
+        throw new Error("BrowserBox session did not return a loginUrl.");
+      }
 
-    const webview = await ensureBrowserBoxElement();
+      const webview = await ensureBrowserBoxElement();
 
-    if (webview.getAttribute("login-link") !== session.loginUrl) {
-      webview.setAttribute("login-link", session.loginUrl);
-    }
+      if (webview.getAttribute("login-link") !== session.loginUrl) {
+        webview.setAttribute("login-link", session.loginUrl);
+      }
 
-    setSurfaceMode("remote");
+      setSurfaceMode("remote");
 
-    if (!(await isBrowserBoxUsable(webview))) {
-      await webview.whenReady();
-    }
+      if (!(await isBrowserBoxUsable(webview))) {
+        await webview.whenReady();
+      }
 
-    return webview;
-  }, [ensureBrowserBoxElement, ensureBrowserBoxSession, isBrowserBoxUsable]);
+      return webview;
+    }, [ensureBrowserBoxElement, ensureBrowserBoxSession, isBrowserBoxUsable]);
 
   const changeIframeWindowLocation = (
     newUrl: string,
@@ -520,9 +512,14 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         await refreshBrowserBoxState();
       } catch (error) {
         console.error("BrowserBox navigation failed.", error);
-        showBrowserBoxStatus(
-          `BrowserBox could not open ${addressInput}. Check the demo session service and try again.`
-        );
+        // If BrowserBox was already running, keep the remote surface visible
+        // and let BBX handle transient network errors internally rather than
+        // replacing the entire view with an "unavailable" page.
+        if (surfaceModeRef.current !== "remote") {
+          showBrowserBoxStatus(
+            `BrowserBox could not open ${addressInput}. Check the demo session service and try again.`
+          );
+        }
       } finally {
         setLoading(false);
       }
@@ -589,7 +586,10 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         let newSrcDoc = NOT_FOUND;
         let newTitle = "404 Not Found";
 
-        if ((await exists(directory)) && (await stat(directory)).isDirectory()) {
+        if (
+          (await exists(directory)) &&
+          (await stat(directory)).isDirectory()
+        ) {
           const dirStats = (
             await Promise.all<DirectoryEntries>(
               (await readdir(directory)).map(async (entry) => {
@@ -624,7 +624,8 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
             )
           )
             .sort(
-              (a, b) => Number(b.icon === "folder") - Number(a.icon === "folder")
+              (a, b) =>
+                Number(b.icon === "folder") - Number(a.icon === "folder")
             )
             .sort((a, b) => {
               const aIsFolder = a.icon === "folder";
@@ -671,41 +672,44 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
               return 0;
             })
             .sort(
-              (a, b) => Number(b.icon === "folder") - Number(a.icon === "folder")
+              (a, b) =>
+                Number(b.icon === "folder") - Number(a.icon === "folder")
             );
 
           iframeRef.current?.addEventListener(
             "load",
             () => {
               try {
-                contentWindow.document.body.querySelectorAll("a").forEach((a) => {
-                  a.addEventListener("click", (event) => {
-                    event.preventDefault();
+                contentWindow.document.body
+                  .querySelectorAll("a")
+                  .forEach((a) => {
+                    a.addEventListener("click", (event) => {
+                      event.preventDefault();
 
-                    const target = event.currentTarget as HTMLAnchorElement;
-                    const isDir = target.getAttribute("type") === "folder";
-                    const { origin, pathname, search } = new URL(target.href);
+                      const target = event.currentTarget as HTMLAnchorElement;
+                      const isDir = target.getAttribute("type") === "folder";
+                      const { origin, pathname, search } = new URL(target.href);
 
-                    if (search) {
-                      goToLink(`${origin}${encodeURI(directory)}${search}`);
-                    } else if (isDir) {
-                      goToLink(target.href);
-                    } else if (fs && target.href) {
-                      getInfoWithExtension(
-                        fs,
-                        decodeURI(pathname),
-                        getExtension(pathname),
-                        ({ pid, url: infoUrl }) => {
-                          open(pid || "OpenWith", { url: infoUrl });
+                      if (search) {
+                        goToLink(`${origin}${encodeURI(directory)}${search}`);
+                      } else if (isDir) {
+                        goToLink(target.href);
+                      } else if (fs && target.href) {
+                        getInfoWithExtension(
+                          fs,
+                          decodeURI(pathname),
+                          getExtension(pathname),
+                          ({ pid, url: infoUrl }) => {
+                            open(pid || "OpenWith", { url: infoUrl });
 
-                          if (pid && infoUrl) {
-                            updateRecentFiles(infoUrl, pid);
+                            if (pid && infoUrl) {
+                              updateRecentFiles(infoUrl, pid);
+                            }
                           }
-                        }
-                      );
-                    }
+                        );
+                      }
+                    });
                   });
-                });
               } catch {
                 // Ignore failure to add click event listeners
               }
@@ -768,14 +772,11 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
 
   const goBack = useCallback((): void => {
     if (surfaceMode === "remote") {
-      runAsync(
-        async () => {
-          const webview = await ensureRemoteBrowserReady();
-          await webview.goBack();
-          await refreshBrowserBoxState();
-        },
-        "BrowserBox goBack failed."
-      );
+      runAsync(async () => {
+        const webview = await ensureRemoteBrowserReady();
+        await webview.goBack();
+        await refreshBrowserBoxState();
+      }, "BrowserBox goBack failed.");
       return;
     }
 
@@ -790,14 +791,11 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
 
   const goForward = useCallback((): void => {
     if (surfaceMode === "remote") {
-      runAsync(
-        async () => {
-          const webview = await ensureRemoteBrowserReady();
-          await webview.goForward();
-          await refreshBrowserBoxState();
-        },
-        "BrowserBox goForward failed."
-      );
+      runAsync(async () => {
+        const webview = await ensureRemoteBrowserReady();
+        await webview.goForward();
+        await refreshBrowserBoxState();
+      }, "BrowserBox goForward failed.");
       return;
     }
 
@@ -812,41 +810,42 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
 
   const reloadCurrent = useCallback((): void => {
     if (surfaceMode === "remote") {
-      runAsync(
-        async () => {
-          try {
-            setLoading(true);
-            const webview = await ensureRemoteBrowserReady();
-            await webview.reload();
-          } catch (error) {
-            setLoading(false);
-            throw error;
-          }
-        },
-        "BrowserBox reload failed."
-      );
+      runAsync(async () => {
+        try {
+          setLoading(true);
+          const webview = await ensureRemoteBrowserReady();
+          await webview.reload();
+        } catch (error) {
+          setLoading(false);
+          throw error;
+        }
+      }, "BrowserBox reload failed.");
       return;
     }
 
     runAsync(() => setUrl(history[position]), "Failed to navigate browser.");
-  }, [ensureRemoteBrowserReady, history, position, runAsync, setUrl, surfaceMode]);
+  }, [
+    ensureRemoteBrowserReady,
+    history,
+    position,
+    runAsync,
+    setUrl,
+    surfaceMode,
+  ]);
 
   const stopCurrent = useCallback((): void => {
     if (surfaceMode === "remote") {
-      runAsync(
-        async () => {
-          const webview = browserBoxRef.current;
+      runAsync(async () => {
+        const webview = browserBoxRef.current;
 
-          if (!webview) return;
+        if (!webview) return;
 
-          try {
-            await webview.stop();
-          } finally {
-            setLoading(false);
-          }
-        },
-        "BrowserBox stop failed."
-      );
+        try {
+          await webview.stop();
+        } finally {
+          setLoading(false);
+        }
+      }, "BrowserBox stop failed.");
       return;
     }
 
@@ -916,7 +915,9 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
             <Arrow direction="right" />
           </Button>
           <Button
-            onClick={loading && surfaceMode === "remote" ? stopCurrent : reloadCurrent}
+            onClick={
+              loading && surfaceMode === "remote" ? stopCurrent : reloadCurrent
+            }
             onContextMenu={haltEvent}
             {...label(
               loading && surfaceMode === "remote"
@@ -931,18 +932,18 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
           ref={inputRef}
           defaultValue={initialUrl}
           onFocusCapture={() => inputRef.current?.select()}
-           onKeyDown={({ key }) => {
-             if (inputRef.current && key === "Enter") {
-               const nextUrl = inputRef.current.value;
+          onKeyDown={({ key }) => {
+            if (inputRef.current && key === "Enter") {
+              const nextUrl = inputRef.current.value;
 
-               changeUrl(id, nextUrl);
-               if (currentUrl.current === nextUrl) {
-                 runAsync(() => setUrl(nextUrl), "Failed to navigate browser.");
-               }
-               window.getSelection()?.removeAllRanges();
-               inputRef.current.blur();
-             }
-           }}
+              changeUrl(id, nextUrl);
+              if (currentUrl.current === nextUrl) {
+                runAsync(() => setUrl(nextUrl), "Failed to navigate browser.");
+              }
+              window.getSelection()?.removeAllRanges();
+              inputRef.current.blur();
+            }
+          }}
           {...ADDRESS_INPUT_PROPS}
         />
       </nav>
