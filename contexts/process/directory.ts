@@ -30,6 +30,7 @@ const directory: Processes = {
       width: 600,
     },
     icon: "/System/Icons/chromium.webp",
+    singleton: true,
     title: "Browser",
   },
   ClassiCube: {
