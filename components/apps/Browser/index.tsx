@@ -641,7 +641,10 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         if (inputRef.current) {
           inputRef.current.value = addressUrl;
         }
-        await webview.navigateTo(addressUrl);
+
+        const tabs = await webview.getTabs();
+
+        await (tabs.length === 0 ? webview.createTab(addressUrl) : webview.navigateTo(addressUrl));
 
         if (addressUrl.startsWith(GOOGLE_SEARCH_QUERY)) {
           prependFileToTitle(`${addressInput} - Google Search`);

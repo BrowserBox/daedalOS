@@ -41,6 +41,7 @@ export type BrowserBoxTab = {
 };
 
 export type BrowserBoxWebviewElement = HTMLElement & {
+  createTab: (url?: string) => Promise<unknown>;
   getTabs: () => Promise<BrowserBoxTab[]>;
   goBack: () => Promise<void>;
   goForward: () => Promise<void>;
