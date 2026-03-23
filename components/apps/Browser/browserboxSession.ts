@@ -74,8 +74,10 @@ export const getBrowserBoxWebviewAssetUrl = (): string => {
     return `/${BROWSERBOX_WEBVIEW_ASSET_RELATIVE_PATH}`;
   }
 
-  return new URL(BROWSERBOX_WEBVIEW_ASSET_RELATIVE_PATH, document.baseURI)
-    .toString();
+  return new URL(
+    BROWSERBOX_WEBVIEW_ASSET_RELATIVE_PATH,
+    document.baseURI
+  ).toString();
 };
 
 export const loadBrowserBoxWebviewAsset = async (
@@ -135,8 +137,7 @@ export class BrowserBoxSessionClient {
   }
 
   public normalizeSession(raw: BrowserBoxSessionSource): BrowserBoxSession {
-    const loginUrl =
-      raw.loginUrl || raw.login_url || raw.loginLink || "";
+    const loginUrl = raw.loginUrl || raw.login_url || raw.loginLink || "";
     const sessionId = raw.sessionId || raw.session_id || raw.id || "";
     let remainingMs = Number(raw.remainingMs ?? raw.remaining_ms);
 
@@ -187,7 +188,11 @@ export class BrowserBoxSessionClient {
             ? payload.error
             : `Failed to create BrowserBox session (${response.status}).`;
 
-        throw new Error(errorMessage);
+        const error = new Error(errorMessage) as Error & { code?: string };
+        if (response.status === 429) {
+          error.code = "RATE_LIMIT_EXCEEDED";
+        }
+        throw error;
       }
 
       return this.normalizeSession(payload as BrowserBoxSessionSource);

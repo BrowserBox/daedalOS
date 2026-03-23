@@ -111,6 +111,84 @@ const createBrowserBoxStatusPage = (
   </body>
 </html>`;
 
+const CHECKOUT_URL = "/api/v1/checkout";
+const LICENSE_URL = "https://dosaygo.com/commerce";
+
+const createOverQuotaStatusPage = (): string => `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Demo Quota Reached</title>
+    <style>
+      body {
+        align-items: center;
+        background: #101418;
+        color: #f5f7fa;
+        display: flex;
+        font-family: Arial, sans-serif;
+        justify-content: center;
+        margin: 0;
+        min-height: 100vh;
+        padding: 24px;
+      }
+      main { max-width: 480px; text-align: center; }
+      h1 { font-size: 24px; margin-bottom: 8px; }
+      p { color: #d0d7de; line-height: 1.5; margin-bottom: 24px; }
+      .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+      .btn {
+        padding: 10px 20px;
+        font-size: 14px;
+        font-weight: 600;
+        border-radius: 6px;
+        text-decoration: none;
+        cursor: pointer;
+        border: none;
+        font-family: inherit;
+      }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-primary:hover { background: #1d4ed8; }
+      .btn-outline { background: transparent; color: #93c5fd; border: 1px solid #93c5fd; }
+      .btn-outline:hover { background: rgba(147,197,253,0.1); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Demo Quota Reached</h1>
+      <p>To keep using BrowserBox, buy runtime minutes for API-powered sessions or host your own instance with a license.</p>
+      <div class="actions">
+        <button class="btn btn-primary" id="buyMinutesBtn">Buy Minutes</button>
+        <a class="btn btn-outline" href="${LICENSE_URL}" target="_blank" rel="noopener">Get a License</a>
+      </div>
+    </main>
+    <script>
+      document.getElementById('buyMinutesBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('buyMinutesBtn');
+        btn.textContent = 'Redirecting\u2026';
+        btn.disabled = true;
+        try {
+          const res = await fetch('${CHECKOUT_URL}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ product: 'minutes_300' }),
+          });
+          const data = await res.json();
+          if (data.checkout_url) {
+            window.top.location.href = data.checkout_url;
+          } else {
+            window.top.location.href = '/pricing/';
+          }
+        } catch {
+          window.top.location.href = '/pricing/';
+        }
+      });
+    </script>
+  </body>
+</html>`;
+
+const isOverQuotaError = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error as Error & { code?: string }).code === "RATE_LIMIT_EXCEEDED";
+
 const Browser: FC<ComponentProcessProps> = ({ id }) => {
   const {
     icon: setIcon,
@@ -223,6 +301,15 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
     },
     [id, prependFileToTitle, resetRemoteNavigationState, setIcon]
   );
+
+  const showOverQuotaStatus = useCallback((): void => {
+    setSurfaceMode("local");
+    setLoading(false);
+    setSrcDoc(createOverQuotaStatusPage());
+    prependFileToTitle("Demo Quota Reached");
+    setIcon(id, processDirectory.Browser.icon);
+    resetRemoteNavigationState();
+  }, [id, prependFileToTitle, resetRemoteNavigationState, setIcon]);
 
   const notifyBrowserBoxDisconnect = useCallback(async (): Promise<void> => {
     if (browserBoxDisconnectNotifiedRef.current) return;
@@ -543,10 +630,12 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         await refreshBrowserBoxState();
       } catch (error) {
         console.error("BrowserBox navigation failed.", error);
-        // If BrowserBox was already running, keep the remote surface visible
-        // and let BBX handle transient network errors internally rather than
-        // replacing the entire view with an "unavailable" page.
-        if (surfaceModeRef.current !== "remote") {
+        if (isOverQuotaError(error)) {
+          showOverQuotaStatus();
+        } else if (surfaceModeRef.current !== "remote") {
+          // If BrowserBox was already running, keep the remote surface visible
+          // and let BBX handle transient network errors internally rather than
+          // replacing the entire view with an "unavailable" page.
           showBrowserBoxStatus(
             `BrowserBox could not open ${addressInput}. Check the demo session service and try again.`
           );
@@ -562,6 +651,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
       refreshBrowserBoxState,
       setIcon,
       showBrowserBoxStatus,
+      showOverQuotaStatus,
     ]
   );
 
