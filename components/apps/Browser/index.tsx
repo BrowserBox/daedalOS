@@ -907,6 +907,16 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
     ]
   );
 
+  const navigateToUrl = useCallback(
+    (newUrl: string): void => {
+      if (inputRef.current) inputRef.current.value = newUrl;
+      changeUrl(id, newUrl);
+      currentUrl.current = newUrl;
+      runAsync(() => setUrl(newUrl), "Failed to navigate browser.");
+    },
+    [changeUrl, id, runAsync, setUrl]
+  );
+
   const supportsCredentialless = useMemo(
     () => "credentialless" in HTMLIFrameElement.prototype,
     []
@@ -1007,7 +1017,14 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
   useEffect(() => {
     if (process && history[position] !== currentUrl.current) {
       currentUrl.current = history[position];
-      runAsync(() => setUrl(history[position]), "Failed to navigate browser.");
+      // In remote mode BrowserBox is the navigation authority — only sync
+      // the ref so daedalos state stays consistent, but do NOT re-navigate.
+      if (surfaceModeRef.current !== "remote") {
+        runAsync(
+          () => setUrl(history[position]),
+          "Failed to navigate browser."
+        );
+      }
     }
   }, [history, position, process, runAsync, setUrl]);
 
@@ -1082,12 +1099,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
           onFocusCapture={() => inputRef.current?.select()}
           onKeyDown={({ key }) => {
             if (inputRef.current && key === "Enter") {
-              const nextUrl = inputRef.current.value;
-
-              changeUrl(id, nextUrl);
-              if (currentUrl.current === nextUrl) {
-                runAsync(() => setUrl(nextUrl), "Failed to navigate browser.");
-              }
+              navigateToUrl(inputRef.current.value);
               window.getSelection()?.removeAllRanges();
               inputRef.current.blur();
             }
@@ -1103,7 +1115,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
               if (ctrlKey) {
                 open("Browser", { url: bookmarkUrl });
               } else {
-                goToLink(bookmarkUrl);
+                navigateToUrl(bookmarkUrl);
               }
             }}
             {...label(
