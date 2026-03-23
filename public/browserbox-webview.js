@@ -2940,10 +2940,28 @@ class BrowserBoxWebview extends HTMLElement {
     return { ...this._capabilityMap };
   }
 
+  /**
+   * Ensure at least one tab exists, creating one if necessary.
+   * Many operations (navigateTo, goBack, reload, …) silently fail when the
+   * session has zero tabs.  Call this before any tab-dependent action.
+   * @param {string} [url] - Optional URL to open if a tab must be created.
+   * @returns {Promise<void>}
+   */
+  async _ensureTab(url) {
+    try {
+      const tabs = await this.callApi('getTabs');
+      if (Array.isArray(tabs) && tabs.length > 0) return;
+    } catch { /* treat failure as "no tabs" */ }
+    await this.callApi('createTab', url || '');
+  }
+
   // Canonical BrowserBox API wrappers
   switchToTab(index) { return this.callApi('switchToTab', index); }
   switchToTabById(targetId) { return this.callApi('switchToTabById', targetId); }
-  navigateTo(url, opts = {}) { return this.callApi('navigateTo', url, opts); }
+  async navigateTo(url, opts = {}) {
+    await this._ensureTab(url);
+    return this.callApi('navigateTo', url, opts);
+  }
   navigateTab(index, url, opts = {}) { return this.callApi('navigateTab', index, url, opts); }
   submitOmnibox(query, opts = {}) { return this.callApi('submitOmnibox', query, opts); }
   createTab(url = '') { return this.callApi('createTab', url); }
