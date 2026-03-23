@@ -612,6 +612,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
       try {
         const webview = await ensureRemoteBrowserReady();
         currentUrl.current = addressUrl;
+        changeUrl(id, addressUrl);
         if (inputRef.current) {
           inputRef.current.value = addressUrl;
         }
@@ -645,6 +646,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
       }
     },
     [
+      changeUrl,
       ensureRemoteBrowserReady,
       id,
       prependFileToTitle,
