@@ -216,6 +216,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
     Promise<BrowserBoxSession | undefined> | undefined
   >(undefined);
   const browserBoxDisconnectNotifiedRef = useRef(false);
+  const primaryTabIdRef = useRef<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [srcDoc, setSrcDoc] = useState("");
   const [surfaceMode, setSurfaceMode] = useState<BrowserSurfaceMode>("local");
@@ -344,11 +345,19 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
 
     try {
       const tabs = await webview.getTabs();
-      const activeTab = tabs.find((tab) => tab.active) || tabs[0];
+      const primaryId = primaryTabIdRef.current;
+      const activeTab =
+        (primaryId ? tabs.find((tab) => tab.id === primaryId) : undefined) ||
+        tabs.find((tab) => tab.active) ||
+        tabs[0];
 
       if (!activeTab) {
         resetRemoteNavigationState();
         return;
+      }
+
+      if (!primaryTabIdRef.current && activeTab.id) {
+        primaryTabIdRef.current = activeTab.id;
       }
 
       setRemoteNavigationState({
@@ -388,10 +397,19 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
       const handleApiReady = (): void => {
         handleRefreshState();
       };
-      const handleDidStartLoading = (): void => {
+      const isOurTab = (tabId?: string): boolean =>
+        !primaryTabIdRef.current || !tabId || tabId === primaryTabIdRef.current;
+
+      const handleDidStartLoading = (event: Event): void => {
+        const { tabId } =
+          (event as CustomEvent<{ tabId?: string }>).detail || {};
+        if (!isOurTab(tabId)) return;
         setLoading(true);
       };
-      const handleDidStopLoading = (): void => {
+      const handleDidStopLoading = (event: Event): void => {
+        const { tabId } =
+          (event as CustomEvent<{ tabId?: string }>).detail || {};
+        if (!isOurTab(tabId)) return;
         setLoading(false);
         runAsync(
           refreshBrowserBoxState,
@@ -399,8 +417,14 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         );
       };
       const handleDidNavigate = (event: Event): void => {
-        const { url: navigatedUrl } =
-          (event as CustomEvent<{ url?: string }>).detail || {};
+        const { tabId, url: navigatedUrl } =
+          (event as CustomEvent<{ tabId?: string; url?: string }>).detail || {};
+
+        if (!isOurTab(tabId)) return;
+
+        if (!primaryTabIdRef.current && tabId) {
+          primaryTabIdRef.current = tabId;
+        }
 
         if (typeof navigatedUrl === "string" && navigatedUrl.length > 0) {
           currentUrl.current = navigatedUrl;
@@ -430,6 +454,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
 
         browserBoxSessionRef.current = undefined;
         browserBoxDisconnectNotifiedRef.current = false;
+        primaryTabIdRef.current = undefined;
         resetRemoteNavigationState();
 
         if (surfaceModeRef.current === "remote") {
