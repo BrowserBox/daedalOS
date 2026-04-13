@@ -464,6 +464,52 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         }
       };
 
+      // Mirrors perfect-saas/desktop/app.js usability handling: fatal reasons
+      // surface immediately, transient reasons get a grace window so a
+      // single network blip doesn't tear down the UI before the webview
+      // reconnects on its own.
+      const FATAL_USABILITY_REASONS = new Set([
+        "sos:missing-login-token",
+        "sos:token-mismatch",
+        "sos:invalid-remote-url",
+        "sos:reset-required",
+      ]);
+      const USABILITY_GRACE_MS = 2486;
+      let usabilityGraceTimer: ReturnType<typeof setTimeout> | undefined;
+      const clearUsabilityGrace = (): void => {
+        if (usabilityGraceTimer !== undefined) {
+          clearTimeout(usabilityGraceTimer);
+          usabilityGraceTimer = undefined;
+        }
+      };
+      const surfaceUnusable = (reason: string): void => {
+        if (surfaceModeRef.current !== "remote") return;
+        showBrowserBoxStatus(
+          `BrowserBox is unavailable (${reason}). Please retry in a moment.`
+        );
+      };
+      const handleUsabilityChanged = (event: Event): void => {
+        const detail =
+          (event as CustomEvent<{ usable?: boolean; reason?: string }>)
+            .detail || {};
+        if (detail.usable) {
+          clearUsabilityGrace();
+          return;
+        }
+        const reason = detail.reason || "webview-unusable";
+        if (FATAL_USABILITY_REASONS.has(reason)) {
+          clearUsabilityGrace();
+          surfaceUnusable(reason);
+          return;
+        }
+        if (usabilityGraceTimer === undefined) {
+          usabilityGraceTimer = setTimeout(() => {
+            usabilityGraceTimer = undefined;
+            surfaceUnusable(reason);
+          }, USABILITY_GRACE_MS);
+        }
+      };
+
       webview.addEventListener("ready", handleReady);
       webview.addEventListener("api-ready", handleApiReady);
       webview.addEventListener("did-start-loading", handleDidStartLoading);
@@ -475,8 +521,10 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
       webview.addEventListener("pointerdown", handleFocus);
       webview.addEventListener("focusin", handleFocus);
       webview.addEventListener("disconnected", handleDisconnected);
+      webview.addEventListener("usability-changed", handleUsabilityChanged);
 
       return () => {
+        clearUsabilityGrace();
         webview.removeEventListener("ready", handleReady);
         webview.removeEventListener("api-ready", handleApiReady);
         webview.removeEventListener("did-start-loading", handleDidStartLoading);
@@ -488,6 +536,10 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
         webview.removeEventListener("pointerdown", handleFocus);
         webview.removeEventListener("focusin", handleFocus);
         webview.removeEventListener("disconnected", handleDisconnected);
+        webview.removeEventListener(
+          "usability-changed",
+          handleUsabilityChanged
+        );
       };
     },
     [
