@@ -490,7 +490,7 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
       };
       const handleUsabilityChanged = (event: Event): void => {
         const detail =
-          (event as CustomEvent<{ usable?: boolean; reason?: string }>)
+          (event as CustomEvent<{ reason?: string; usable?: boolean }>)
             .detail || {};
         if (detail.usable) {
           clearUsabilityGrace();
