@@ -1032,25 +1032,19 @@ const Browser: FC<ComponentProcessProps> = ({ id }) => {
   }, [history, position, process, runAsync, setUrl]);
 
   useEffect(() => {
-    const handlePageHide = (): void => {
+    const handleBeforeUnload = (): void => {
       runAsync(
         notifyBrowserBoxDisconnect,
         "Failed to notify BrowserBox disconnect."
       );
     };
 
-    window.addEventListener("pagehide", handlePageHide);
-    window.addEventListener("beforeunload", handlePageHide);
+    window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
-      window.removeEventListener("pagehide", handlePageHide);
-      window.removeEventListener("beforeunload", handlePageHide);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
       browserBoxListenersCleanupRef.current?.();
       browserBoxListenersCleanupRef.current = undefined;
-      runAsync(
-        notifyBrowserBoxDisconnect,
-        "Failed to notify BrowserBox disconnect."
-      );
     };
   }, [notifyBrowserBoxDisconnect, runAsync]);
 
