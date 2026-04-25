@@ -28,9 +28,11 @@
  * | `height` | no | `"100%"` | CSS height (px if bare number) |
  * | `embedder-origin` | no | `"*"` | Origin of the embedding page (passed to BrowserBox iframe) |
  * | `request-timeout-ms` | no | `30000` | API call timeout (ms) |
+ * | `media-permissions` | no | `"default"` | Set to `"none"` to deny embedded mic/camera/display-capture use |
+ * | `session-unload-warning` | no | `"default"` | Set to `"none"` to suppress BrowserBox's own "leave remote browser?" beforeunload warning |
+ * | `beforeunload-behavior` | no | `"default"` | Set to `"leave"` to auto-depart or `"remain"` to auto-remain when a remote page triggers a beforeunload dialog |
  *
- * ## Events
- * | Event | Detail | Description |
+ * ## Events * | Event | Detail | Description |
  * |-------|--------|-------------|
  * | `ready` | `{ type }` | Legacy transport handshake completed |
  * | `api-ready` | `{ methods: string[] }` | Modern API available |
@@ -44,6 +46,9 @@
  * | `did-stop-loading` | `{ tabId, url }` | Page load finished |
  * | `did-navigate` | `{ tabId, url }` | Navigation committed |
  * | `policy-denied` | `{ url, reason }` | Navigation blocked by policy |
+ * | `modal-opened` | `{ id, type, actions, dismissAction, ... }` | BrowserBox modal became visible |
+ * | `modal-updated` | `{ id, type, actions, dismissAction, ... }` | BrowserBox modal metadata changed |
+ * | `modal-closed` | `{ id, type, action, reason }` | BrowserBox modal closed or was answered |
  * | `sos` | `{ reasonCode, message, retryUrl, ... }` | Fatal unusable signal from embedded BrowserBox |
  * | `usability-changed` | `{ usable: boolean }` | Browser usability state changed |
  * | `disconnected` | — | Session ended (element removed or login-link changed) |
@@ -614,6 +619,7 @@ const POLICY_DEFAULTS = {
   select: { use: false, extract: false },
   events: { read: true },
   policy: { read: true },
+  modals: { read: true, respond: true },
 };
 
 const INTERACTION_MODE_PRESETS = {
@@ -665,6 +671,8 @@ const IMPLEMENTED_CAPABILITIES = {
   'select.extract': true,
   'events.read': true,
   'policy.read': true,
+  'modals.read': true,
+  'modals.respond': true,
 };
 
 const METHOD_CAPABILITY_MAP = {
@@ -703,6 +711,10 @@ const METHOD_CAPABILITY_MAP = {
   evaluate: ['act.evaluate'],
   uiVisible: ['page.read'],
   allowUserToggleUI: ['page.read'],
+  getTransportDiagnostics: ['events.read'],
+  getCurrentModal: ['modals.read'],
+  respondToModal: ['modals.respond'],
+  dismissModal: ['modals.respond'],
   frameCapture: ['capture.frame'],
   getFrame: ['capture.frame'],
   cleanSlate: ['tabs.write', 'page.navigate'],
@@ -723,6 +735,9 @@ const EVENT_ALIAS_MAP = {
   'did-stop-loading': ['page.load.stopped'],
   'favicon-changed': ['page.favicon.changed'],
   'policy-denied': ['policy.denied'],
+  'modal-opened': ['modal.opened'],
+  'modal-updated': ['modal.updated'],
+  'modal-closed': ['modal.closed'],
 };
 
 function debugBrowserBoxWebview(...args) {
@@ -906,6 +921,12 @@ const EVENT_CAPABILITY_RULES = Object.freeze({
   'page.load.stopped': 'page.read',
   'page.favicon.changed': 'page.read',
   'policy.changed': 'policy.read',
+  'modal-opened': 'modals.read',
+  'modal-updated': 'modals.read',
+  'modal-closed': 'modals.read',
+  'modal.opened': 'modals.read',
+  'modal.updated': 'modals.read',
+  'modal.closed': 'modals.read',
 });
 
 function createPolicyNamespace(instance) {
@@ -966,6 +987,44 @@ class BrowserBoxPolicyError extends BrowserBoxError {
   }
 }
 
+const DEFAULT_IFRAME_ALLOW_FEATURES = [
+  'accelerometer',
+  'camera',
+  'encrypted-media',
+  'display-capture',
+  'geolocation',
+  'gyroscope',
+  'microphone',
+  'midi',
+  'clipboard-read',
+  'clipboard-write',
+  'web-share',
+  'fullscreen',
+];
+const MEDIA_ALLOW_FEATURES = new Set(['camera', 'microphone', 'display-capture']);
+
+function normalizeMediaPermissions(value) {
+  return String(value || '').trim().toLowerCase() === 'none' ? 'none' : 'default';
+}
+
+function normalizeSessionUnloadWarning(value) {
+  return String(value || '').trim().toLowerCase() === 'none' ? 'none' : 'default';
+}
+
+function normalizeBeforeUnloadBehavior(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'allow' || raw === 'leave') return 'allow';
+  if (raw === 'block' || raw === 'remain') return 'block';
+  return 'default';
+}
+
+function computeIframeAllow(mediaPermissions) {
+  const features = normalizeMediaPermissions(mediaPermissions) === 'none'
+    ? DEFAULT_IFRAME_ALLOW_FEATURES.filter((f) => !MEDIA_ALLOW_FEATURES.has(f))
+    : DEFAULT_IFRAME_ALLOW_FEATURES;
+  return features.join('; ');
+}
+
 class BrowserBoxWebview extends HTMLElement {
   static get observedAttributes() {
     return [
@@ -982,6 +1041,9 @@ class BrowserBoxWebview extends HTMLElement {
       'chrome',
       'augment-root',
       'capture',
+      'media-permissions',
+      'session-unload-warning',
+      'beforeunload-behavior',
     ];
   }
 
@@ -995,7 +1057,7 @@ class BrowserBoxWebview extends HTMLElement {
     this.iframe.allowFullscreen = true;
     this.iframe.setAttribute(
       'allow',
-      'accelerometer; camera; encrypted-media; display-capture; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; web-share; fullscreen'
+      computeIframeAllow(this.getAttribute('media-permissions'))
     );
     this.iframe.setAttribute(
       'sandbox',
@@ -1168,7 +1230,9 @@ class BrowserBoxWebview extends HTMLElement {
     this._frameBootstrapRetryTimer = null;
     this._frameBootstrapRetryRemaining = 0;
     this._frameBootstrapEpoch = 0;
+    this._lastSuccessfulBootstrapAt = 0;
     this._iframeViewportKickTimer = null;
+    this._resizeBootstrapTimer = null;
     this._lastResizeWidth = -1;
     this._lastResizeHeight = -1;
     this._visibilityPollTimer = null;
@@ -1219,6 +1283,10 @@ class BrowserBoxWebview extends HTMLElement {
       clearTimeout(this._iframeViewportKickTimer);
       this._iframeViewportKickTimer = null;
     }
+    if (this._resizeBootstrapTimer) {
+      clearTimeout(this._resizeBootstrapTimer);
+      this._resizeBootstrapTimer = null;
+    }
     if (this._deferredVisibilityRecheckTimer) {
       clearTimeout(this._deferredVisibilityRecheckTimer);
       this._deferredVisibilityRecheckTimer = null;
@@ -1248,6 +1316,7 @@ class BrowserBoxWebview extends HTMLElement {
       this._initPingCount = 0;
       this._reconnectStopped = false;
       this._silentRecoveryUsed = false;
+      this._lastSuccessfulBootstrapAt = 0;
       this._resetReadyPromise();
       this._invalidateFrameBootstrap('login-link-changed');
       this._rejectPending(createBrowserBoxError('browserbox-webview source changed.', {
@@ -1268,6 +1337,21 @@ class BrowserBoxWebview extends HTMLElement {
     }
     if (name === 'ui-visible' || name === 'allow-user-toggle-ui') {
       this._sendUISync('attribute-changed');
+      return;
+    }
+    if (name === 'media-permissions') {
+      if (this.iframe) {
+        this.iframe.setAttribute('allow', computeIframeAllow(newValue));
+      }
+      this._sendUISync('media-permissions-attribute-changed');
+      return;
+    }
+    if (name === 'session-unload-warning') {
+      this._sendUISync('session-unload-warning-attribute-changed');
+      return;
+    }
+    if (name === 'beforeunload-behavior') {
+      this._sendUISync('beforeunload-behavior-attribute-changed');
       return;
     }
     if (name === 'policy' || name === 'interaction-mode' || name === 'chrome' || name === 'augment-root' || name === 'capture') {
@@ -1328,7 +1412,13 @@ class BrowserBoxWebview extends HTMLElement {
   _handleResize() {
     const w = this.clientWidth;
     const h = this.clientHeight;
-    if (w === this._lastResizeWidth && h === this._lastResizeHeight) return;
+    const RESIZE_TOLERANCE_PX = 2;
+    if (
+      this._lastResizeWidth >= 0
+      && this._lastResizeHeight >= 0
+      && Math.abs(w - this._lastResizeWidth) <= RESIZE_TOLERANCE_PX
+      && Math.abs(h - this._lastResizeHeight) <= RESIZE_TOLERANCE_PX
+    ) return;
     this._lastResizeWidth = w;
     this._lastResizeHeight = h;
     this._emitBrowserBoxEvent('viewport.resized', {
@@ -1337,6 +1427,12 @@ class BrowserBoxWebview extends HTMLElement {
     });
     this._schedulePageAugmentRefresh();
     this._sendViewportReset('viewport-resized');
+    if (this._resizeBootstrapTimer) clearTimeout(this._resizeBootstrapTimer);
+    this._resizeBootstrapTimer = setTimeout(() => {
+      this._resizeBootstrapTimer = null;
+      this._invalidateFrameBootstrap('resize-settled');
+      this._scheduleFrameBootstrap('resize-settled', 0);
+    }, 450);
   }
 
   _stopFrameBootstrap() {
@@ -1419,7 +1515,17 @@ class BrowserBoxWebview extends HTMLElement {
   }
 
   _scheduleVisibilityWake(reason = 'became-visible') {
-    console.info('[browserbox-webview] visibility wake scheduled', { reason });
+    // If a bootstrap succeeded very recently, skip: routine focus/visibility
+    // events from the host page don't need to restart the cast pipeline.
+    // `reactivateActiveTab` / `requestFrameRefresh` deliberately reset
+    // `_lastEffectiveVisibility` so their explicit wakes bypass this cooldown.
+    const VISIBILITY_WAKE_COOLDOWN_MS = 2500;
+    const since = Date.now() - this._lastSuccessfulBootstrapAt;
+    if (this._lastSuccessfulBootstrapAt && since < VISIBILITY_WAKE_COOLDOWN_MS) {
+      console.info(`[browserbox-webview] visibility wake skipped (${reason}, last success ${since}ms ago)`);
+      return;
+    }
+    console.info(`[browserbox-webview] visibility wake scheduled (${reason})`);
     this._invalidateFrameBootstrap(`visibility-wake:${reason}`);
     this._scheduleFrameBootstrap(reason, 50);
     this._startFrameBootstrapRetries(reason, {
@@ -1494,16 +1600,20 @@ class BrowserBoxWebview extends HTMLElement {
     if (this._frameBootstrapRetryRemaining === 0) {
       return;
     }
-    const run = () => {
+    const run = async () => {
       if (!this.isConnected || this._frameBootstrapRetryRemaining <= 0) {
         this._stopFrameBootstrapRetries();
         return;
       }
       const attempt = (attempts - this._frameBootstrapRetryRemaining) + 1;
       this._frameBootstrapRetryRemaining -= 1;
-      void this._bootstrapActiveTabFrame(`${reason}-retry-${attempt}`);
-      if (this._frameBootstrapRetryRemaining <= 0) {
-        this._frameBootstrapRetryTimer = null;
+      const ok = await this._bootstrapActiveTabFrame(`${reason}-retry-${attempt}`);
+      // A successful bootstrap means the active tab is bound and the viewport
+      // was re-asserted — additional retries would just churn the cast. Only
+      // keep retrying if the bootstrap short-circuited (dimensions, readiness,
+      // or tab lookup failed).
+      if (ok || this._frameBootstrapRetryRemaining <= 0) {
+        this._stopFrameBootstrapRetries();
         return;
       }
       this._frameBootstrapRetryTimer = setTimeout(run, Math.max(250, intervalMs));
@@ -1573,8 +1683,8 @@ class BrowserBoxWebview extends HTMLElement {
             timeoutMs: Math.min(this.requestTimeoutMs, 5000),
           });
         }
-        console.info('[browserbox-webview] bootstrapped active tab frame', {
-          reason,
+        this._lastSuccessfulBootstrapAt = Date.now();
+        console.info(`[browserbox-webview] bootstrapped frame (${reason})`, {
           tabId,
           transport: this._transportMode,
           kickedViewportGeometry,
@@ -1582,8 +1692,7 @@ class BrowserBoxWebview extends HTMLElement {
         });
         return true;
       } catch (error) {
-        console.warn('[browserbox-webview] active tab frame bootstrap failed', {
-          reason,
+        console.warn(`[browserbox-webview] active tab frame bootstrap failed (${reason})`, {
           error: error instanceof Error ? error.message : String(error),
         });
         return false;
@@ -1715,6 +1824,7 @@ class BrowserBoxWebview extends HTMLElement {
     this._transportMode = 'unknown';
     this._legacyTabsCache = [];
     this._initPingCount = 0;
+    this._lastSuccessfulBootstrapAt = 0;
     if (needsReset) {
       this._iframeRetryCount = 0;
       this._resetReadyPromise();
@@ -2004,10 +2114,16 @@ class BrowserBoxWebview extends HTMLElement {
     };
     const chromeMode = String(this.getAttribute('chrome') || 'default').trim().toLowerCase();
     const chromeVisibleByMode = chromeMode === 'none' ? false : true;
+    const mediaPermissions = normalizeMediaPermissions(this.getAttribute('media-permissions'));
+    const sessionUnloadWarning = normalizeSessionUnloadWarning(this.getAttribute('session-unload-warning'));
+    const beforeUnloadBehavior = normalizeBeforeUnloadBehavior(this.getAttribute('beforeunload-behavior'));
     return {
       uiVisible: parseBool(this.getAttribute('ui-visible'), chromeVisibleByMode),
       allowUserToggleUI: parseBool(this.getAttribute('allow-user-toggle-ui'), true),
       chromeMode,
+      mediaPermissions,
+      sessionUnloadWarning,
+      beforeUnloadBehavior,
     };
   }
 
@@ -2236,6 +2352,9 @@ class BrowserBoxWebview extends HTMLElement {
         uiVisible: config.uiVisible,
         allowUserToggleUI: config.allowUserToggleUI,
         chromeMode: config.chromeMode,
+        mediaPermissions: config.mediaPermissions,
+        sessionUnloadWarning: config.sessionUnloadWarning,
+        beforeunloadBehavior: config.beforeUnloadBehavior,
         embedderOrigin: this.embedderOrigin,
         reason,
       },
@@ -3100,7 +3219,7 @@ class BrowserBoxWebview extends HTMLElement {
   }
 
   async listApiMethods(options = {}) {
-    if (this._apiMethods.length > 0) {
+    if (this._apiMethods.length > 0 && options.refresh !== true) {
       return this._apiMethods.slice();
     }
     const ready = await this._ensureReadyForApi();
@@ -3120,7 +3239,7 @@ class BrowserBoxWebview extends HTMLElement {
         ...options,
         timeoutMs: Number.isFinite(options.timeoutMs)
           ? options.timeoutMs
-          : Math.min(this.requestTimeoutMs, 5000),
+          : Math.min(this.requestTimeoutMs, 30000),
       });
       this._apiMethods = Array.isArray(methods) ? methods.slice() : [];
       this._transportMode = 'modern';
@@ -3412,6 +3531,19 @@ class BrowserBoxWebview extends HTMLElement {
     }
     return this.callApi('allowUserToggleUI', allow);
   }
+  getCurrentModal() {
+    return this.callApi('getCurrentModal');
+  }
+  respondToModal(request = {}) {
+    assertPlainObject(request, 'respondToModal(request)');
+    return this.callApi('respondToModal', request);
+  }
+  dismissModal(request = {}) {
+    if (request !== undefined) {
+      assertPlainObject(request, 'dismissModal(request)');
+    }
+    return this.callApi('dismissModal', request || {});
+  }
 
   // Automation surface
   waitForSelector(selector, opts = {}) { return this.callApi('waitForSelector', selector, opts); }
@@ -3475,6 +3607,10 @@ class BrowserBoxWebview extends HTMLElement {
    */
   requestFrameRefresh(reason = 'host-request') {
     this._lastEffectiveVisibility = false;
+    // Host-driven refreshes (window un-minimize, taskbar restore) must bypass
+    // the visibility-wake cooldown — those are the exact cases where cast
+    // really did stall and a rebind is required.
+    this._lastSuccessfulBootstrapAt = 0;
     this._scheduleVisibilityWake(reason);
   }
 
